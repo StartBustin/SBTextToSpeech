@@ -24,10 +24,6 @@ namespace SBTextToSpeech
 
     public class SBTextToSpeech : MelonMod
     {
-        public static HashSet<string> labLevels = new HashSet<string>();
-        public static HashSet<string> unionLevels = new HashSet<string>();
-        public static HashSet<string> petrovLevels = new HashSet<string>();
-        public static HashSet<string> valkyrieBayLevels = new HashSet<string>();
 
         public static float timeUntilNextLevelTimerFetch = 0;
         public const float resetTimeUntilNextLevelTimerFetch = 5;
@@ -44,13 +40,19 @@ namespace SBTextToSpeech
         public static string currentSceneName = "";
         public static string previousSceneName = "";
 
-        public static float igt = -1;
-        public static Dictionary<string, float> igtByLevel = new Dictionary<string, float>();
-        public static bool initGameTimeCalled = false;
-        public static bool useGameTime = true;
-        public static bool verboseSceneChange = false;
+        List<DialogElement> currentSentences = null;
+        List<DialogElement> previousSentences = null;
 
-        public static HashSet<string> DoNotTrackSceneTime = new HashSet<string>();
+        DialogElement currentFirstSentence = null;
+        DialogElement previousFirstSentence = null;
+
+        HashSet<DialogManager.Character> englishSoundingCharacters = new HashSet<DialogManager.Character>();
+        HashSet<DialogManager.Character> robotSoundingCharacters = new HashSet<DialogManager.Character>();
+        HashSet<DialogManager.Character> altFemaleVoiceCharacters = new HashSet<DialogManager.Character>();
+
+        int currentSentenceID = -1;
+        int previousSentenceID = -1;
+
 
         //private static readonly HttpClient httpClient = new HttpClient();
 
@@ -61,6 +63,17 @@ namespace SBTextToSpeech
 
             Thread threadNetworking = new Thread(AsynchronousClient.StartClient);
             threadNetworking.Start();
+
+            englishSoundingCharacters.Add(DialogManager.Character.Cassie);
+            englishSoundingCharacters.Add(DialogManager.Character.RADIO);
+            englishSoundingCharacters.Add(DialogManager.Character.GenericFemale);
+
+            altFemaleVoiceCharacters.Add(DialogManager.Character.Sally);
+            altFemaleVoiceCharacters.Add(DialogManager.Character.Jun);
+
+            robotSoundingCharacters.Add(DialogManager.Character.Core);
+            robotSoundingCharacters.Add(DialogManager.Character.Alpha);
+            robotSoundingCharacters.Add(DialogManager.Character.Rizz);
         }
 
         public override void OnSceneWasLoaded(int buildindex, string sceneName) // Runs when a Scene has Loaded and is passed the Scene's Build Index and Name.
@@ -71,8 +84,7 @@ namespace SBTextToSpeech
             if (isConnected)
             {
                 MelonLogger.Msg("Attempting to send HTTP request.");
-                string uriEncodedSceneName = System.Uri.EscapeDataString(sceneName);
-                AsynchronousClient.SendHttpGetMessage(uriEncodedSceneName);
+                //AsynchronousClient.SendHttpGetMessage(sceneName);
                 MelonLogger.Msg("HTTP Request should have been sent...");
             }
             else
@@ -83,7 +95,31 @@ namespace SBTextToSpeech
 
         public override void OnUpdate()
         {
-            
+            if (DialogManager.current != null && DialogManager.current.sentances != null && DialogManager.current.sentances.Count > 0)
+            {
+                previousSentences = currentSentences;
+                previousFirstSentence = currentFirstSentence;
+                previousSentenceID = currentSentenceID;
+
+                currentSentences = DialogManager.current.sentances;
+
+                currentFirstSentence = DialogManager.current.sentances[0];
+                currentSentenceID = DialogManager.current.sentanceId;
+
+                if (previousFirstSentence != currentFirstSentence
+                    || previousSentenceID != currentSentenceID)
+                {
+                    int voiceNum = 3;
+                    DialogManager.Character currentCharacter = currentSentences[currentSentenceID - 1].character;
+                    if (englishSoundingCharacters.Contains(currentCharacter)) { voiceNum = 3; }
+                    else if (altFemaleVoiceCharacters.Contains(currentCharacter)) { voiceNum = 1; }
+                    else if (robotSoundingCharacters.Contains(currentCharacter)) { voiceNum = 0; }
+                    else { voiceNum = 1; }
+                    AsynchronousClient.SendHttpGetMessage(currentSentences[currentSentenceID - 1].dialog, voiceNum);
+                }
+
+
+            }
         }
 
         private void AttemptReconnect()
@@ -120,134 +156,6 @@ namespace SBTextToSpeech
         {
             MelonLogger.Msg("OnApplicationQuit");
             AsynchronousClient.StopClient();
-        }
-
-        public float GetTime()
-        {
-            RefreshLevelTimerReference();
-
-            if (levelTimer != null)
-            {
-                UpdateIGT(currentSceneName, SBCalcTimeFromTimerDigits());
-            }
-
-            return SumIGT();
-        }
-
-        private static void RefreshLevelTimerReference()
-        {
-            timeUntilNextLevelTimerFetch -= UnityEngine.Time.deltaTime;
-            if (timeUntilNextLevelTimerFetch <= 0)
-            {
-                timeUntilNextLevelTimerFetch += resetTimeUntilNextLevelTimerFetch;
-
-                levelTimer = UnityEngine.GameObject.FindObjectOfType<LevelTimer>();
-                if (verboseSceneChange) { LogSumIGT(); }
-            }
-        }
-
-        public float SumIGT()
-        {
-            float time = 0;
-            foreach (float t in igtByLevel.Values)
-            {
-                time += t;
-            }
-            return time;
-        }
-
-        public static void ResetSumIGT()
-        {
-            igtByLevel.Clear();
-        }
-
-        public static void UpdateIGT(string sceneName, float igt)
-        {
-            if (!DoNotTrackSceneTime.Contains(sceneName))
-            {
-                sceneName = AlphaOrCassie() + ":" + GetLevelNameForScene(sceneName);
-                if (igtByLevel.ContainsKey(sceneName))
-                {
-                    igtByLevel[sceneName] = igt;
-                }
-                else
-                {
-                    igtByLevel.Add(sceneName, igt);
-                }
-            }
-        }
-
-        public static string GetLevelNameForScene(string sceneName)
-        {
-            string levelName = "Unknown";
-
-            if (labLevels.Contains(sceneName))
-            {
-                levelName = "labLevels";
-            }
-            if (unionLevels.Contains(sceneName))
-            {
-                levelName = "unionLevels";
-            }
-            if (petrovLevels.Contains(sceneName))
-            {
-                levelName = "petrovLevels";
-            }
-            if (valkyrieBayLevels.Contains(sceneName))
-            {
-                levelName = "valkyrieBayLevels";
-            }
-
-            return levelName;
-        }
-
-        public static string AlphaOrCassie() 
-        {
-            string charName = "Alpha";
-            if (LevelManager.currentLevel != null && LevelManager.currentLevel.character > 0) 
-            {
-                charName = "Cassie";
-            }
-            return charName;
-        }
-
-        public static void LogSumIGT()
-        {
-            MelonLogger.Msg("LogSumIGT: ");
-            foreach (string key in igtByLevel.Keys)
-            {
-                MelonLogger.Msg(key + ": " + TimeSpan.FromSeconds(igtByLevel[key]).ToString(@"d\.hh\:mm\:ss"));
-            }
-        }
-
-        public static float SBCalcTimeFromTimerDigits()
-        {
-            float seconds = 0;
-            if (levelTimer != null)
-            {
-                seconds += levelTimer.minutes2 * 600;
-                seconds += levelTimer.minutes * 60;
-                seconds += levelTimer.seconds2 * 10;
-                seconds += levelTimer.seconds;
-                seconds += levelTimer.mSeconds;
-            }
-
-            return seconds;
-        }
-
-        public static float FP2SVCalcTimeFromTimerDigits()
-        {
-            float seconds = 0;
-            if (levelTimer != null)
-            {
-                seconds += levelTimer.minutes2 * 600;
-                seconds += levelTimer.minutes * 60;
-                seconds += levelTimer.seconds2 * 10;
-                seconds += levelTimer.seconds;
-                seconds += levelTimer.mSeconds;
-            }
-
-            return seconds;
         }
     }
 
@@ -338,7 +246,6 @@ namespace SBTextToSpeech
                     if (response.Equals("0\r\n"))
                     {
                         MelonLogger.Msg("Split index appears to be 0. Resetting IGT.");
-                        SBTextToSpeech.ResetSumIGT();
                     }
                 }
                 catch (Exception e)
@@ -481,18 +388,34 @@ namespace SBTextToSpeech
             }
         }
 
-        public static void SendHttpGetMessage(string msg) 
+        public static void SendHttpGetMessage(string msg, int voiceNum) 
         {
-            
-            string httpContentTemplate = @"GET /?speak={REPLACEME} HTTP/1.1
+            try
+            {
+                msg = msg.Replace("$00.20", "");
+                msg = msg.Replace("’", "'");
+                string httpContentTemplate = @"GET /?speak={speak}&voice={voice} HTTP/1.1
 Host: localhost:8734
 
 ";
+                //msg = httpContentTemplate.Replace("{REPLACEME}", System.Uri.EscapeDataString("Oh hey, it'd be kinda neat if you had a cool message here!"));
+                msg = httpContentTemplate.Replace("{speak}", System.Uri.EscapeDataString(msg));
+                msg = msg.Replace("{voice}", voiceNum.ToString());
+                MelonLogger.Msg(msg.ToString());
+                //msg = msg.Replace("{REPLACEME}", msg);
+                Send(client, msg);
+            }
 
-            msg = httpContentTemplate.Replace("{REPLACEME}", System.Uri.EscapeDataString("Oh hey, it'd be kinda neat if you had a cool message here!"));
-            MelonLogger.Msg(msg.ToString());
-            //msg = msg.Replace("{REPLACEME}", msg);
-            Send(client, msg);
+            catch (Exception e) 
+            {
+                AsynchronousClient.StartClient();
+            }
+            
+        }
+
+        public static void SendHttpGetMessage(string msg)
+        {
+            SendHttpGetMessage(msg, 3);
         }
     }
 }
