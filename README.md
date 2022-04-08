@@ -1,9 +1,1 @@
-### GENERAL INFORMATION:
-
-- An Example Mod for [MelonLoader](https://github.com/LavaGang/MelonLoader).
-
----
-
-### LICENSING & CREDITS:
-
-TestMod is licensed under the Apache License, Version 2.0. See [LICENSE](https://github.com/LavaGang/TestMod/blob/master/LICENSE.md) for the full License.
+Sends messages via http to a separate Text to Speech application (available elsewhere) which reads out various texts from Starbuster as they display on the screen. This is not currently ready for public use.
